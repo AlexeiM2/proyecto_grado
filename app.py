@@ -40,11 +40,16 @@ if sexos:
 if tipos_arma:
     df_filtrado = df_filtrado[df_filtrado['tipo_arma'].isin(tipos_arma)]
 
+# Normalizar el texto en la columna 'sexo'
+df_filtrado['sexo'] = df_filtrado['sexo'].astype(str).str.upper().str.strip()
+
 # KPIs
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 col1.metric("👮‍♂️ Total Detenidos", len(df_filtrado))
 col2.metric("📍 Provincias", df_filtrado['nombre_provincia'].nunique())
-col3.metric("🧍‍♀️ Mujeres", (df_filtrado['sexo'] == 'a').sum())
+col3.metric("🧍‍♀️ Mujeres", (df_filtrado['sexo'] == 'MUJER').sum())
+col4.metric("🧍‍♂️ Hombres", (df_filtrado['sexo'] == 'HOMBRE').sum())
+
 # Gráfico 1: Detenidos por año
 st.subheader("📅 Detenidos por Año")
 fig1 = px.histogram(df_filtrado, x="año", color="sexo", barmode="group", title="Detenciones por Año y Sexo")
