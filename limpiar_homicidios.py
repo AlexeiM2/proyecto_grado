@@ -4,9 +4,10 @@ import pandas as pd
 
 # Rutas de los archivos Excel
 archivos = [
-    "mdi_detenidos-aprehendidos_pm_2019_2024.xlsx",
-    "mdi_detenidosaprehendidos_pm_ene_jun_2025.xlsx"
+    r"C:\Users\Lenovo\Documents\proyecto_grado\mdi_homicidios_intencionales_pm_2025_ene_jun.xlsx",
+    r"C:\Users\Lenovo\Documents\proyecto_grado\mdi_homicidios_intencionales_pm_2014_2024.xlsx"
 ]
+
 
 
 # Cargar y concatenar la SEGUNDA HOJA de cada archivo
@@ -28,17 +29,17 @@ df = df.dropna(how='all')
 df = df.drop_duplicates()
 
 # Convertir fecha de detención si existe
-if 'fecha_detencion_aprehension' in df.columns:
-    df['fecha_detencion_aprehension'] = pd.to_datetime(df['fecha_detencion_aprehension'], errors='coerce')
-    df = df.dropna(subset=['fecha_detencion_aprehension'])
-    df = df[df['fecha_detencion_aprehension'].dt.year >= 2020]
+if 'fecha_infraccion' in df.columns:
+    df['fecha_infraccion'] = pd.to_datetime(df['fecha_infraccion'], errors='coerce')
+    df = df.dropna(subset=['fecha_infraccion'])
+    df = df[df['fecha_infraccion'].dt.year >= 2020]
 
 # Limpiar valores de texto clave
-for col in ['sexo', 'nombre_provincia', 'tipo_arma', 'presunta_infraccion']:
+for col in ['sexo', 'provincia', 'tipo_arma', 'presunta_motivacion']:
     if col in df.columns:
         df[col] = df[col].astype(str).str.title().str.strip()
 
 # Guardar dataset limpio completo
-df.to_csv("detenidos_completo_limpio.csv", index=False)
+df.to_csv("homicidios_completo_limpio.csv", index=False)
 
-print("✅ Dataset completo y limpio guardado como 'detenidos_completo_limpio.csv'")
+print(" Dataset completo y limpio guardado como 'homicidios_completo_limpio.csv'")
