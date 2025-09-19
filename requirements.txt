@@ -1,5 +1,8 @@
+# Requiere python 3.12 en adelante
+
 streamlit
 pandas
 google-generativeai
+protobuf
 python-dotenv
 plotly

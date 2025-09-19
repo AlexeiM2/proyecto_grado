@@ -37,7 +37,6 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # --- Función para responder con Gemini con busqueda en el CSV ---
-import re
 
 def responder_con_gemini(pregunta, df):
     # Crear una copia del DataFrame para filtrar
