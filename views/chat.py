@@ -173,8 +173,8 @@ def vista_chat():
         elif "asesinato" in pregunta_lower:
             where.append("tipo_muerte = ?")
             params.append("Asesinato")
-        elif "homicidio" in pregunta_lower:
-            where.append("tipo_muerte = ?")
+        elif "tipo de muerte homicidio" in pregunta_lower:
+            where.append("tipo_muerte = ?") 
             params.append("Homicidio")
 
         # ----------------------------
