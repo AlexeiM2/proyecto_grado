@@ -4,13 +4,13 @@ import plotly.express as px
 import os, glob, re
 from datetime import datetime
 
-#python -m pip install openpyxl
+# python -m pip install openpyxl
 
 def vista_dashboard():
     if not st.session_state.get("view"):
         st.session_state["view"] = "dashboard"
      
-    # Solo mostrar botón si hay DB
+    # Botón para navegar al chat (se mantiene según tu solicitud)
     if st.session_state.get("db_disponible", False):
         if st.button("💬 Ir al Chat Inteligente"):
             st.session_state["view"] = "chat"
@@ -106,101 +106,22 @@ def vista_dashboard():
 
         df_filtrado['sexo'] = df_filtrado['sexo'].astype(str).str.upper().str.strip()
 
-        # --- Layout dividido ---
-        col_chat, col_dash = st.columns([1, 2])
+        # --- SECCIÓN DASHBOARD (Ahora ocupa todo el ancho) ---
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💀 Total Homicidios", len(df_filtrado))
+        col2.metric("📍 Provincias", df_filtrado['provincia'].nunique())
+        col3.metric("🧍‍♀️ Mujeres", (df_filtrado['sexo'] == 'MUJER').sum())
+        col4.metric("🧍‍♂️ Hombres", (df_filtrado['sexo'] == 'HOMBRE').sum())
 
-        # --- CHAT INTELIGENTE ---
-        with col_chat:
-            st.subheader("💬 Asistente IA")
+        st.subheader("📅 Homicidios por Año")
+        fig1 = px.histogram(df_filtrado, x="año", color="sexo", barmode="group", title="Homicidios por Año y Sexo")
+        st.plotly_chart(fig1, use_container_width=True)
 
-            if "historial_chat" not in st.session_state:
-                st.session_state["historial_chat"] = []
-
-            for msg in st.session_state["historial_chat"]:
-                with st.chat_message(msg["rol"]):
-                    st.markdown(msg["contenido"])
-
-            pregunta = st.chat_input("Haz una pregunta sobre los homicidios...")
-
-            if pregunta:
-                st.session_state["historial_chat"].append({"rol": "user", "contenido": pregunta})
-
-                df_temp = df_filtrado.copy()
-                pregunta_lower = pregunta.lower()
-
-                # --- Detectar año ---
-                match_year = re.search(r"(19|20)\d{2}", pregunta_lower)
-                año = int(match_year.group()) if match_year else None
-                if año:
-                    df_temp = df_temp[df_temp["año"] == año]
-
-                # --- Filtros automáticos ---
-                filtros = {
-                    "provincia": None,
-                    "canton": None,
-                    "sexo": None,
-                    "tipo_arma": None,
-                    "arma": None,
-                    "presunta_motivacion": None,
-                    "tipo_muerte": None,
-                    "etnia": None,
-                    "estado_civil": None,
-                    "nacionalidad": None
-                }
-
-                for col in filtros.keys():
-                    if col in df_temp.columns:
-                        valores_unicos = df_temp[col].dropna().unique()
-                        for valor in valores_unicos:
-                            if isinstance(valor, str) and valor.lower() in pregunta_lower:
-                                filtros[col] = valor
-                                df_temp = df_temp[df_temp[col].astype(str).str.lower() == valor.lower()]
-                                break
-
-                # --- Generar respuesta ---
-                total = len(df_temp)
-                if total > 0:
-                    partes = []
-                    if filtros["canton"]:
-                        partes.append(f"en el cantón {filtros['canton']}")
-                    elif filtros["provincia"]:
-                        partes.append(f"en {filtros['provincia']}")
-                    if año:
-                        partes.append(f"en {año}")
-                    if filtros["sexo"]:
-                        partes.append(f"de {filtros['sexo'].lower()}s")
-                    if filtros["tipo_arma"]:
-                        partes.append(f"con {filtros['tipo_arma'].lower()}")
-                    if filtros["presunta_motivacion"]:
-                        partes.append(f"por {filtros['presunta_motivacion'].lower()}")
-
-                    contexto = " ".join(partes)
-                    respuesta = f"🔎 Se registraron **{total} homicidios {contexto}** según los datos disponibles."
-                else:
-                    respuesta = "⚠️ No se encontraron registros que coincidan con tu consulta."
-
-                with st.chat_message("assistant"):
-                    st.markdown(respuesta)
-                st.session_state["historial_chat"].append({"rol": "assistant", "contenido": respuesta})
-
-        # --- DASHBOARD ---
-        with col_dash:
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("💀 Total Homicidios", len(df_filtrado))
-            col2.metric("📍 Provincias", df_filtrado['provincia'].nunique())
-            col3.metric("🧍‍♀️ Mujeres", (df_filtrado['sexo'] == 'MUJER').sum())
-            col4.metric("🧍‍♂️ Hombres", (df_filtrado['sexo'] == 'HOMBRE').sum())
-
-            st.subheader("📅 Homicidios por Año")
-            fig1 = px.histogram(df_filtrado, x="año", color="sexo", barmode="group", title="Homicidios por Año y Sexo")
-            st.plotly_chart(fig1, use_container_width=True)
-
-            st.subheader("🗺️ Homicidios por Provincia")
-            fig2 = px.histogram(df_filtrado, x="provincia", color="sexo", title="Distribución por Provincia")
-            st.plotly_chart(fig2, use_container_width=True)
+        st.subheader("🗺️ Homicidios por Provincia")
+        fig2 = px.histogram(df_filtrado, x="provincia", color="sexo", title="Distribución por Provincia")
+        st.plotly_chart(fig2, use_container_width=True)
 
     else:
         st.warning("⚠️ No hay dataset cargado. Sube archivos XLSX para crear el dataset y refresca la app.")
-    st.divider()
-
     
+    st.divider()
