@@ -2,9 +2,20 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import os, glob, re
+import unicodedata
 from datetime import datetime
 
+
 # python -m pip install openpyxl
+
+def normalizar_texto(texto):
+    if pd.isna(texto) or texto == 'None':
+        return None
+    # 1. Eliminar tildes y caracteres especiales (NFD descompone caracteres con tilde)
+    texto_normalizado = unicodedata.normalize('NFD', str(texto))
+    texto_normalizado = texto_normalizado.encode('ascii', 'ignore').decode("utf-8")
+    # 2. Quitar espacios extra y pasar a mayúsculas (o Title)
+    return texto_normalizado.strip().upper()	
 
 def vista_dashboard():
     if not st.session_state.get("view"):
@@ -21,6 +32,7 @@ def vista_dashboard():
     st.set_page_config(page_title="DASHBOARD IA", layout="wide")
 
     st.title("📊 Dashboard de Homicidios (2014-2025)")
+
 
     # --- Función para limpiar y unir archivos Excel ---
     def limpiar_y_unir_archivos(archivos):
@@ -49,7 +61,7 @@ def vista_dashboard():
         ]
         for col in columnas_texto:
             if col in df.columns:
-                df[col] = df[col].astype(str).str.title().str.strip()
+                df[col] = df[col].apply(normalizar_texto)
 
         for col in ['coordenada_x', 'coordenada_y']:
             if col in df.columns:
