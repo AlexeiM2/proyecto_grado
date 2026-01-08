@@ -93,11 +93,23 @@ def vista_chat():
         query = "SELECT DISTINCT provincia FROM homicidios WHERE provincia IS NOT NULL"
         df = pd.read_sql_query(query, _conn)
         return df["provincia"].tolist()
+        
+    @st.cache_data
+    def get_cantones(_conn):
+        # Obtenemos la lista única de cantones para poder compararlos
+        query = "SELECT DISTINCT canton FROM homicidios WHERE canton IS NOT NULL"
+        df = pd.read_sql_query(query, _conn)
+        return df["canton"].tolist()
+
+    def detectar_canton(pregunta, cantones_disponibles):
+        pregunta_norm = normalizar(pregunta)
+        for canton in cantones_disponibles:
+            if normalizar(canton) in pregunta_norm:
+                return canton
+        return None
 
 
-    # =========================================================
-    # FUNCIÓN PRINCIPAL (CORREGIDA AL 100%)
-    # =========================================================
+    
     def responder_con_gemini(pregunta: str, conn) -> str:
         pregunta_lower = normalizar(pregunta)
         cantidad_solicitada = 20
@@ -129,6 +141,16 @@ def vista_chat():
         if match_year:
             where.append("substr(fecha_infraccion, 1, 4) = ?")
             params.append(match_year.group(1))
+            
+        # ----------------------------
+        # Cantón 
+        # ----------------------------
+        cantones = get_cantones(conn)
+        canton_detectado = detectar_canton(pregunta_lower, cantones)
+
+        if canton_detectado:
+            where.append("canton = ?")
+            params.append(canton_detectado)
 
         # ----------------------------
         # Provincia 
@@ -148,7 +170,7 @@ def vista_chat():
             where.append("provincia = ?")
             params.append(provincia_detectada)
 
-        if provincia_detectada and any(p in pregunta_lower for p in ["motivacion", "motivaciones"]):
+        if (provincia_detectada or canton_detectado) and any(p in pregunta_lower for p in ["motivacion", "motivaciones"]):
 
             df_motivaciones = motivaciones_mas_frecuentes(conn, provincia_detectada)
 
