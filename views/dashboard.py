@@ -4,7 +4,7 @@ import plotly.express as px
 import os, glob, re
 import unicodedata
 from datetime import datetime
-
+from database import actualizar_base_de_datos
 
 # python -m pip install openpyxl
 
@@ -39,22 +39,43 @@ def vista_dashboard():
         df_list = []
         for archivo in archivos:
             try:
-                temp_df = pd.read_excel(archivo, sheet_name=1, header=1)
+                # 1. Leemos el archivo sin definir header fijo para analizarlo
+                # Usamos engine='openpyxl' para asegurar compatibilidad
+                temp_df = pd.read_excel(archivo, sheet_name=1, header=None)
+                
+                # 2. Encontrar dinámicamente la fila que contiene 'tipo_muerte' o 'fecha_infraccion'
+                header_row = 0
+                for i, row in temp_df.iterrows():
+                    if "tipo_muerte" in [str(val).lower() for val in row.values]:
+                        header_row = i
+                        break
+                
+                # 3. Volver a cargar con el header correcto
+                temp_df = pd.read_excel(archivo, sheet_name=1, header=header_row)
+                
+                # Limpiar nombres de columnas
+                temp_df.columns = [str(col).strip().lower().replace(" ", "_").replace(";", "") for col in temp_df.columns]
+                
                 df_list.append(temp_df)
-            except Exception:
-                st.warning(f"No se pudo leer correctamente: {archivo.name}")
+            except Exception as e:
+                st.warning(f"Error al procesar {archivo.name}: {e}")
+                
         if not df_list:
             return None
 
+        # Unir todos los DataFrames
         df = pd.concat(df_list, ignore_index=True)
-        df.columns = [col.strip().lower().replace(" ", "_").replace(";", "") for col in df.columns]
+        
+        # Eliminar duplicados y filas vacías
         df = df.dropna(how='all').drop_duplicates()
 
+        # Manejo de fechas
         if 'fecha_infraccion' in df.columns:
             df['fecha_infraccion'] = pd.to_datetime(df['fecha_infraccion'], errors='coerce')
             df = df.dropna(subset=['fecha_infraccion'])
             df = df[df['fecha_infraccion'].dt.year >= 2014]
 
+        # Normalizar columnas de texto
         columnas_texto = [
             'sexo', 'provincia', 'canton', 'tipo_arma', 'arma',
             'presunta_motivacion', 'tipo_muerte', 'etnia', 'estado_civil', 'nacionalidad'
@@ -63,14 +84,18 @@ def vista_dashboard():
             if col in df.columns:
                 df[col] = df[col].apply(normalizar_texto)
 
+        # Limpieza profunda de coordenadas (eliminando comillas y cambiando coma por punto)
         for col in ['coordenada_x', 'coordenada_y']:
             if col in df.columns:
-                df[col] = df[col].astype(str).str.replace("'", "").str.replace(",", ".")
+                df[col] = (df[col].astype(str)
+                           .str.replace('"', '', regex=False)
+                           .str.replace("'", "", regex=False)
+                           .str.replace(",", ".", regex=False)
+                           .str.strip())
                 df[col] = pd.to_numeric(df[col], errors='coerce')
+
         df.to_csv("homicidios_completo_limpio.csv", index=False)
         return df
-
-
     # --- Cargar dataset actual si existe ---
     df = None
     if os.path.exists("homicidios_completo_limpio.csv"):
@@ -97,9 +122,17 @@ def vista_dashboard():
         )
         if uploaded_files:
             df_new = limpiar_y_unir_archivos(uploaded_files)
+            
             if df_new is not None:
-                df_new['año'] = df_new['fecha_infraccion'].dt.year
-                st.success("✅ Archivos cargados y limpiados. Refresca la página.")
+                # 2. Actualizar la base de datos SQLite con el nuevo CSV
+                with st.spinner("Actualizando base de datos inteligente..."):
+                    if actualizar_base_de_datos():
+                        st.success("✅ Base de datos sincronizada con éxito.")
+                        st.session_state["db_disponible"] = True
+                    else:
+                        st.error("❌ El CSV se generó pero la base de datos falló.")
+
+                # 3. Refrescar la interfaz
                 st.rerun()
 
     # --- Aplicar filtros ---
