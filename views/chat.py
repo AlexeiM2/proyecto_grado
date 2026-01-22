@@ -112,172 +112,94 @@ def vista_chat():
     
     def responder_con_gemini(pregunta: str, conn) -> str:
         pregunta_lower = normalizar(pregunta)
-        cantidad_solicitada = 20
         provincias = get_provincias(conn)
-        provincia_detectada = detectar_provincia(pregunta, provincias)
-
-
-        # ----------------------------
-        # Detectar cantidad solicitada
-        # ----------------------------
-        m1 = re.search(r'(\d+)\s+primer', pregunta_lower)
-        m2 = re.search(r'(\d+)\s+(casos|registros|homicidios|femicidios|asesinatos)', pregunta_lower)
-        m3 = re.search(r'(dame|muestrame|muéstrame|quiero)\s+(\d+)', pregunta_lower)
-
-        if m1:
-            cantidad_solicitada = int(m1.group(1))
-        elif m2:
-            cantidad_solicitada = int(m2.group(1))
-        elif m3:
-            cantidad_solicitada = int(m3.group(2))
-
+        cantones = get_cantones(conn)
+        
         where = []
         params = []
 
-        # ----------------------------
-        # Año 
-        # ----------------------------
-        match_year = re.search(r'(\d{4})', pregunta_lower)
-        if match_year:
-            where.append("substr(fecha_infraccion, 1, 4) = ?")
-            params.append(match_year.group(1))
-            
-        # ----------------------------
-        # Cantón 
-        # ----------------------------
-        cantones = get_cantones(conn)
-        canton_detectado = detectar_canton(pregunta_lower, cantones)
+        # --- (Detección de Geografía, Año, Sexo, etc. - Se mantiene igual) ---
+        provincia_detectada = detectar_provincia(pregunta_lower, provincias)
+        pregunta_para_canton = pregunta_lower
+        if provincia_detectada:
+            where.append("provincia = ?")
+            params.append(provincia_detectada)
+            pregunta_para_canton = pregunta_para_canton.replace(normalizar(provincia_detectada), "")
 
+        canton_detectado = detectar_canton(pregunta_para_canton, cantones)
         if canton_detectado:
             where.append("canton = ?")
             params.append(canton_detectado)
 
-        # ----------------------------
-        # Provincia 
-        # ----------------------------
-        provincias = pd.read_sql_query(
-            "SELECT DISTINCT provincia FROM homicidios WHERE provincia IS NOT NULL",
-            conn
-        )["provincia"].tolist()
+        match_year = re.search(r'(\d{4})', pregunta_lower)
+        if match_year:
+            where.append("substr(fecha_infraccion, 1, 4) = ?")
+            params.append(match_year.group(1))
 
-        provincia_detectada = None
-        for p in provincias:
-            if normalizar(p) in pregunta_lower:
-                provincia_detectada = p
-                break
-
-        if provincia_detectada:
-            where.append("provincia = ?")
-            params.append(provincia_detectada)
-
-        if (provincia_detectada or canton_detectado) and any(p in pregunta_lower for p in ["motivacion", "motivaciones"]):
-
-            df_motivaciones = motivaciones_mas_frecuentes(conn, provincia_detectada)
-
-            if df_motivaciones.empty:
-                return f"No se encontraron motivaciones registradas para {provincia_detectada}."
-
-            respuesta = f"📊 **Motivaciones más frecuentes en {provincia_detectada}:**\n\n"
-            for _, row in df_motivaciones.head(5).iterrows():
-                respuesta += f"- {row['presunta_motivacion']}: {row['total']} casos\n"
-
-            return respuesta
-
-        # ----------------------------
-        # Tipo de muerte
-        # ----------------------------
-        if "sicariato" in pregunta_lower:
-            where.append("tipo_muerte LIKE ?")
-            params.append("%Sicariato%")
-        elif "femicidio" in pregunta_lower:
-            where.append("tipo_muerte LIKE ?")
-            params.append("%Femicidio%")
-        elif "asesinato" in pregunta_lower:
-            where.append("tipo_muerte = ?")
-            params.append("Asesinato")
-        elif "tipo de muerte homicidio" in pregunta_lower:
-            where.append("tipo_muerte = ?") 
-            params.append("Homicidio")
-
-        # ----------------------------
-        # Sexo
-        # ----------------------------
         if "mujer" in pregunta_lower:
             where.append("sexo = ?")
-            params.append("Mujer")
+            params.append("MUJER")
         elif "hombre" in pregunta_lower:
             where.append("sexo = ?")
-            params.append("Hombre")
+            params.append("HOMBRE")
 
-        # ----------------------------
-        # Lugar
-        # ----------------------------
-        if "via publica" in pregunta_lower or "vía publica" in pregunta_lower:
-            where.append("lugar LIKE ?")
-            params.append("%VIA PUBLICA%")
-        elif "domicilio" in pregunta_lower:
-            where.append("lugar LIKE ?")
-            params.append("%DOMICILIO%")
+        if "sicariato" in pregunta_lower:
+            where.append("tipo_muerte LIKE ?")
+            params.append("%SICARIATO%")
+        elif "femicidio" in pregunta_lower:
+            where.append("tipo_muerte LIKE ?")
+            params.append("%FEMICIDIO%")
+        # -------------------------------------------------------------------
 
-        # ----------------------------
-        # WHERE final
-        # ----------------------------
         where_sql = "WHERE " + " AND ".join(where) if where else ""
-
-        # ----------------------------
-        # Conteo real (SIN Gemini)
-        # ----------------------------
-        count_query = f"""
-            SELECT COUNT(*) AS total
-            FROM homicidios
-            {where_sql}
-        """
-        total = pd.read_sql_query(count_query, conn, params=params).iloc[0, 0]
+        
+        # Conteo total para contexto
+        total = pd.read_sql_query(f"SELECT COUNT(*) FROM homicidios {where_sql}", conn, params=params).iloc[0, 0]
 
         if total == 0:
-            return "No se encontraron registros que coincidan con la consulta."
+            return "No encontré registros con esos filtros."
 
-        if any(p in pregunta_lower for p in ["cuánt", "cuantos", "cuantas", "total"]):
-            return f"Según el dataset, hay **{total} casos** que cumplen los criterios."
+        # --- LÓGICA DE DECISIÓN: ¿CASO ESPECÍFICO O ESTADÍSTICA? ---
+        
+        pide_caso_especifico = any(palabra in pregunta_lower for palabra in ["detalle", "caso", "ejemplo", "cuentame", "cuéntame"])
 
-        # ----------------------------
-        # Obtener muestra
-        # ----------------------------
-        select_query = f"""
-            SELECT *
-            FROM homicidios
-            {where_sql}
-            LIMIT ?
-        """
-        df_muestra = pd.read_sql_query(
-            select_query,
-            conn,
-            params=params + [cantidad_solicitada]
-        )
+        if pide_caso_especifico:
+            # Buscamos una muestra de 3 casos reales con columnas descriptivas
+            query_casos = f"""
+                SELECT fecha_infraccion, hora_infraccion, lugar, arma, presunta_motivacion, edad, instruccion
+                FROM homicidios 
+                {where_sql} 
+                ORDER BY RANDOM() LIMIT 3
+            """
+            df_casos = pd.read_sql_query(query_casos, conn, params=params)
+            contexto_datos = "Aquí tienes ejemplos de casos reales individuales:\n" + df_casos.to_json(orient="records", force_ascii=False)
+        else:
+            # Buscamos el resumen estadístico que ya teníamos
+            query_stats = f"SELECT presunta_motivacion, COUNT(*) as total FROM homicidios {where_sql} GROUP BY presunta_motivacion ORDER BY total DESC"
+            df_stats = pd.read_sql_query(query_stats, conn, params=params)
+            contexto_datos = "Resumen estadístico de motivaciones:\n" + df_stats.to_json(orient="records", force_ascii=False)
 
-        if df_muestra.empty:
-            return "No se pudieron obtener registros de muestra."
-
-        datos_json = df_muestra.to_json(orient="records", force_ascii=False)
-
-        # ----------------------------
-        # Prompt Gemini (solo redacción)
-        # ----------------------------
+        # Prompt único para Gemini
         prompt = f"""
-        Eres un asistente experto en análisis de homicidios.
-        Responde únicamente con base en los datos reales proporcionados.
-
-        Datos:
-        {datos_json}
-
-        Pregunta del usuario: "{pregunta}"
+        Eres un experto en criminología y seguridad. 
+        Usuario pregunta: "{pregunta}"
+        
+        Datos del sistema:
+        {contexto_datos}
+        
+        Total de casos en la base de datos para este filtro: {total}
+        
+        Instrucciones:
+        1. Si el usuario pidió un caso o detalle, describe los ejemplos proporcionados con respeto y profesionalismo.
+        2. Si el usuario pidió un análisis o estadísticas, usa el resumen para dar una visión global.
+        3. Menciona siempre que la información proviene del registro oficial de {total} casos.
         """
 
         try:
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"⚠️ Error al generar respuesta: {e}"
+            return f"⚠️ Error: {e}"
 
     # =========================================================
     # INPUT DEL CHAT
